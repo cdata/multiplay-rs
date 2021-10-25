@@ -1,0 +1,117 @@
+<button id="create_session">Create session</button>
+<button id="connect_socket">Connect WS</button>
+<button id="connect_rtc">Connect RTC</button>
+
+<script>
+create_session.addEventListener('click', async () => {
+  const response = await fetch('http://localhost:8001/session', {
+    method: 'POST',
+    mode: 'cors'
+  });
+  console.log(await response.json());
+});
+
+connect_socket.addEventListener('click', () => {
+  const socket = new WebSocket('ws://localhost:8001');
+  socket.connect();
+});
+
+connect_rtc.addEventListener('click', async () => {
+  const peer = new RTCPeerConnection({
+    // iceServers: [{
+      // urls: ['stun:stun.l.google.com:19302']
+    // }]
+  });
+
+  const channel = peer.createDataChannel("data", {
+    ordered: false,
+    maxRetransmits: 0
+  });
+
+  channel.binaryType = 'arraybuffer';
+
+  channel.onerror = (e) => {
+    console.error(e);
+  };
+
+  channel.onopen = () => {
+    console.log('DataChannel open');
+
+    channel.onmessage = () => {
+      console.log('DataChannel message');
+    };
+  };
+
+  // setInterval(() => {
+
+  //   console.log(peer, channel);
+
+  // }, 1500);
+
+  peer.onicecandidate = (event) => {
+    if (event.candidate) {
+      console.log('Received ice candidate:', event.candidate);
+    } else {
+      console.log('Done receiving ice candidates...');
+    }
+  };
+
+  peer.onconnectionstatechange = () => {
+    console.log('peer#connectionstatechange');
+  };
+
+  peer.oniceconnectionstatechange = () => {
+    console.log('peer#iceconnectionstatechange');
+  };
+
+  peer.onnegotiationneeded = () => {
+    console.log('peer#negotiationneeded');
+  };
+
+  peer.onsignalingstatechange = () => {
+    console.log('peer#signalingstatechange');
+  };
+
+  peer.ondatachannel = () => {
+    console.log('peer#datachannel');
+  };
+
+  peer.onicecandidateerror = () => {
+    console.log('peer#icecandidateerror');
+  };
+
+  peer.onconnectionstatechange = () => {
+    console.log('peer#connectionstatechange');
+  };
+
+  peer.onicegatheringstatechange = (event) => {
+    console.log('peer#icegatheringstatechange');
+  };
+
+  console.log('Creating offer...');
+  const offer = await peer.createOffer();
+  // await RTCPeerConnection.setLocalDescription(offer);
+
+  await peer.setLocalDescription(offer);
+
+  console.log('SDP Description:', offer);
+
+  let response = await fetch('http://127.0.0.1:8001', {
+    method: 'POST',
+    body: peer.localDescription.sdp
+  });
+
+  let sdp = await response.json();
+
+  const remoteDescription = new RTCSessionDescription(sdp.answer);
+
+  console.log('Server SDP:', sdp);
+  console.log('Remote description:', remoteDescription);
+
+  await peer.setRemoteDescription(remoteDescription);
+  await peer.addIceCandidate(new RTCIceCandidate(sdp.candidate));
+
+  console.log('Peer configuration complete...');
+});
+
+</script>
