@@ -3,8 +3,10 @@ mod helpers;
 mod sessions {
     use super::helpers;
     use crate::rtc::{
-        protocol::{IncomingMessage, OutgoingMessage, SessionControlMessage, SessionPayload},
-        serve::serve_rtc_sessions,
+        protocol::server::{
+            IncomingMessage, OutgoingMessage, SessionControlMessage, SessionPayload,
+        },
+        sessions::serve_sessions,
     };
     use ntest::timeout;
 
@@ -16,13 +18,13 @@ mod sessions {
     async fn are_created_pending_authentication() {
         helpers::init_logging();
 
-        let (send_to_game, receive_from_server) = flume::unbounded::<IncomingMessage<u32>>();
-        let (_send_to_server, receive_from_game) = flume::unbounded::<OutgoingMessage<u32>>();
+        let (send_to_game, receive_from_server) = flume::unbounded::<IncomingMessage>();
+        let (_send_to_server, receive_from_game) = flume::unbounded::<OutgoingMessage>();
         let shared_sessions = helpers::make_empty_session_state();
 
         debug!("Starting RTC session server...");
 
-        let server_thread = serve_rtc_sessions(
+        let server_thread = serve_sessions(
             shared_sessions,
             ([127, 0, 0, 1], 8001).into(),
             send_to_game,

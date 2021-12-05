@@ -1,40 +1,30 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use async_std::sync::Mutex;
-use flume::{Receiver, Sender};
-use serde::{Deserialize, Serialize};
-use tokio::task;
-use tokio::task::JoinHandle;
+use flume::Sender;
 use warp;
 use warp::http::Method;
 use warp::Filter;
 
-use crate::rtc::protocol::{IncomingMessage, OutgoingMessage};
+use crate::rtc::protocol::server::IncomingMessage;
 use crate::rtc::session::Sessions;
-
-use std::fmt::Debug;
 
 mod handlers {
     use std::{net::SocketAddr, sync::Arc};
 
     use async_std::sync::Mutex;
-    use serde::{Deserialize, Serialize};
-    use std::fmt::Debug;
     use warp::{Rejection, Reply};
 
     use flume::Sender;
 
-    use crate::rtc::protocol::{IncomingMessage, SessionControlMessage, SessionPayload};
+    use crate::rtc::protocol::server::{IncomingMessage, SessionControlMessage, SessionPayload};
     use crate::rtc::session::{Session, Sessions};
 
-    pub async fn create_session<T>(
+    pub(crate) async fn create_session(
         shared_sessions: Arc<Mutex<Sessions>>,
-        send_to_game: Sender<IncomingMessage<T>>,
+        send_to_game: Sender<IncomingMessage>,
         socket_addr: Option<SocketAddr>,
-    ) -> Result<impl Reply, Rejection>
-    where
-        T: Deserialize<'static> + Serialize + Send + Sync + Debug,
-    {
+    ) -> Result<impl Reply, Rejection> {
         debug!("New session requested by {:?}...", socket_addr);
 
         let session = Session::new();
@@ -68,13 +58,10 @@ mod handlers {
     }
 }
 
-async fn serve_rtc_sessions_task<T>(
+pub fn sessions_api(
     shared_sessions: Arc<Mutex<Sessions>>,
-    address: SocketAddr,
-    send_to_game: Sender<IncomingMessage<T>>,
-) where
-    T: 'static + Deserialize<'static> + Serialize + Send + Sync + Debug,
-{
+    send_to_game: Sender<IncomingMessage>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let with_sessions = warp::any().map(move || shared_sessions.clone());
     let with_send_to_game = warp::any().map(move || send_to_game.clone());
 
@@ -85,27 +72,9 @@ async fn serve_rtc_sessions_task<T>(
         .and(warp::filters::addr::remote())
         .and_then(handlers::create_session);
 
-    let routes = warp::any().and(create_session).with(
+    warp::any().and(create_session).with(
         warp::cors()
             .allow_method(Method::POST)
             .allow_origin("http://localhost:8000"),
-    );
-
-    warp::serve(routes).run(address).await;
-}
-
-pub fn serve_rtc_sessions<T>(
-    shared_sessions: Arc<Mutex<Sessions>>,
-    address: SocketAddr,
-    send_to_game: Sender<IncomingMessage<T>>,
-    _receive_from_game: Receiver<OutgoingMessage<T>>,
-) -> JoinHandle<()>
-where
-    T: 'static + Deserialize<'static> + Serialize + Send + Sync + Debug,
-{
-    task::spawn(serve_rtc_sessions_task(
-        shared_sessions.clone(),
-        address,
-        send_to_game.clone(),
-    ))
+    )
 }

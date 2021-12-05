@@ -4,15 +4,12 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 
-pub type SessionID = u32;
+use super::common::SessionID;
 
 #[derive(Debug)]
-pub enum OutgoingMessage<T>
-where
-    T: Deserialize<'static> + Serialize + Send + Sync + Debug,
-{
-    Send(SessionID, T),
-    Broadcast(T),
+pub enum OutgoingMessage {
+    Send(SessionID, Vec<u8>),
+    Broadcast(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -22,16 +19,26 @@ pub enum SessionControlMessage {
 }
 
 #[derive(Debug)]
-pub enum IncomingMessage<T>
-where
-    T: Deserialize<'static> + Serialize + Send + Sync + Debug,
-{
+pub enum IncomingMessage {
     Solicited(SessionID, Option<SocketAddr>, Sender<SessionControlMessage>),
     Connected(SessionID),
     Disconnected(SessionID),
     Reconnected(SessionID),
     Departed(SessionID),
-    Received(SessionID, T),
+    Received(SessionID, Vec<u8>),
+}
+
+#[derive(Debug)]
+pub enum TransportIncomingMessage {
+    Received(SessionID, Vec<u8>),
+    Connected(SessionID),
+    Disconnected(SessionID),
+}
+
+#[derive(Debug)]
+pub enum TransportOutgoingMessage {
+    Send(Vec<SessionID>, Vec<u8>),
+    Purge(SessionID),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
