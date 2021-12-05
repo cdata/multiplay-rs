@@ -4,7 +4,7 @@ use crate::rtc::{
     protocol::{
         client::Message,
         common::SessionID,
-        server::{IncomingMessage, TransportMessage},
+        server::{IncomingMessage, TransportIncomingMessage, TransportOutgoingMessage},
     },
     server::TransportError,
     session::{Sessions, Transport},
@@ -70,7 +70,7 @@ impl WebSocketTransport {
         shared_sessions: Arc<Mutex<Sessions>>,
         connection_address: SocketAddr,
         mut rx: SplitStream<WebSocket>,
-        send_to_server: Sender<IncomingMessage>,
+        send_to_server: Sender<TransportIncomingMessage>,
     ) {
         while let Some(result) = rx.next().await {
             match result {
@@ -87,7 +87,9 @@ impl WebSocketTransport {
                         Some(session_id) => match serde_cbor::de::from_slice(message.as_bytes()) {
                             Ok(Message::Data(message)) => {
                                 if let Err(error) = send_to_server
-                                    .send_async(IncomingMessage::Received(session_id, message))
+                                    .send_async(TransportIncomingMessage::Received(
+                                        session_id, message,
+                                    ))
                                     .await
                                 {
                                     error!("Error forwarding Web Socket message: {:?}", error);
@@ -138,7 +140,7 @@ impl WebSocketTransport {
         address: SocketAddr,
         internal_state: Arc<Mutex<InternalState>>,
         shared_sessions: Arc<Mutex<Sessions>>,
-        send_to_server: Sender<IncomingMessage>,
+        send_to_server: Sender<TransportIncomingMessage>,
     ) -> impl warp::Future {
         let with_internal_state = warp::any().map(move || internal_state.clone());
         let with_shared_sessions = warp::any().map(move || shared_sessions.clone());
@@ -154,7 +156,7 @@ impl WebSocketTransport {
                 |ws: warp::ws::Ws,
                  internal_state: Arc<Mutex<InternalState>>,
                  shared_sessions: Arc<Mutex<Sessions>>,
-                 send_to_server: Sender<IncomingMessage>,
+                 send_to_server: Sender<TransportIncomingMessage>,
                  maybe_address| {
                     ws.on_upgrade(move |websocket| async move {
                         match maybe_address {
@@ -189,7 +191,7 @@ impl WebSocketTransport {
     async fn start_outgoing_message_handler(
         internal_state: Arc<Mutex<InternalState>>,
         shared_sessions: Arc<Mutex<Sessions>>,
-        receive_from_server: Receiver<TransportMessage>,
+        receive_from_server: Receiver<TransportOutgoingMessage>,
     ) -> impl warp::Future {
         async {}
     }
@@ -204,8 +206,8 @@ impl RtcTransport for WebSocketTransport {
     async fn start(
         self,
         shared_sessions: Arc<Mutex<Sessions>>,
-        send_to_server: Sender<IncomingMessage>,
-        receive_from_server: Receiver<TransportMessage>,
+        send_to_server: Sender<TransportIncomingMessage>,
+        receive_from_server: Receiver<TransportOutgoingMessage>,
     ) -> Result<(), TransportError> {
         let warp_runs = WebSocketTransport::start_warp(
             self.address.clone(),

@@ -86,10 +86,44 @@ impl RtcServer {
                         Receiver<TransportIncomingMessage>,
                     )| async move {
                         while let Ok(message) = receiver.recv_async().await {
+                            let mut sessions = shared_sessions.lock().await;
+
                             match message {
-                                TransportIncomingMessage::Connected(session_id) => {}
-                                TransportIncomingMessage::Disconnected(session_id) => {}
-                                TransportIncomingMessage::Received(session_id, data) => {}
+                                TransportIncomingMessage::Connected(session_id) => {
+                                    // TODO: Need to validate that the transport type isn't already
+                                    // connected; if it is, the connection needs to be rejected!
+                                    if let Some(session) = sessions.get_mut(&session_id) {
+                                        session.transports.insert(transport_type.clone());
+
+                                        // As long as the client has a bulk transport, they can be considered
+                                        // connected. Unordered messages can fall-back to sending over the bulk
+                                        // transport.
+                                        if session.has_transport(&Transport::Bulk) {
+                                            send_to_game
+                                                .send_async(IncomingMessage::Connected(session_id))
+                                                .await;
+                                        }
+                                    }
+                                }
+                                TransportIncomingMessage::Disconnected(session_id) => {
+                                    // TODO: Do we need a "degraded" connection state when there is no
+                                    // available unordered transport?
+                                    if let Some(session) = sessions.get_mut(&session_id) {
+                                        session.transports.remove(&transport_type);
+                                        if !session.has_transport(&Transport::Bulk) {
+                                            send_to_game
+                                                .send_async(IncomingMessage::Disconnected(
+                                                    session_id,
+                                                ))
+                                                .await;
+                                        }
+                                    }
+                                }
+                                TransportIncomingMessage::Received(session_id, data) => {
+                                    send_to_game
+                                        .send_async(IncomingMessage::Received(session_id, data))
+                                        .await;
+                                }
                             }
                         }
                     },
@@ -133,7 +167,7 @@ impl RtcServer {
                 .partition(|session_id| match sessions.get(session_id) {
                     Some(session) => {
                         preferred_transport == Transport::Unordered
-                            && session.has_transport(Transport::Unordered)
+                            && session.has_transport(&Transport::Unordered)
                     }
                     _ => false,
                 });

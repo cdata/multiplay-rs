@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::rtc::protocol::common::SessionID;
 
 // TODO: These should wrap unbounded channel ports
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum Transport {
     Bulk,
     Unordered,
@@ -42,15 +42,15 @@ impl Session {
         rand::random()
     }
 
-    pub fn has_transport(&self, transport: Transport) -> bool {
-        match self.transports.get(&transport) {
+    pub fn has_transport(&self, transport: &Transport) -> bool {
+        match self.transports.get(transport) {
             Some(_) => true,
             None => false,
         }
     }
 
     pub fn add_transport(&mut self, transport: Transport) -> bool {
-        match self.has_transport(transport) {
+        match self.has_transport(&transport) {
             false => {
                 self.transports.insert(transport);
                 true
@@ -62,8 +62,8 @@ impl Session {
     pub fn get_status(&self) -> SessionStatus {
         if !self.authenticated {
             SessionStatus::Authenticating
-        } else if self.has_transport(Transport::Bulk) {
-            if self.has_transport(Transport::Unordered) {
+        } else if self.has_transport(&Transport::Bulk) {
+            if self.has_transport(&Transport::Unordered) {
                 SessionStatus::Connected(ConnectionQuality::Full)
             } else {
                 SessionStatus::Connected(ConnectionQuality::Partial)
