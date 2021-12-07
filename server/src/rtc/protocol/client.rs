@@ -5,6 +5,7 @@ use super::common::SessionID;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
+    AdminHandshake(String),
     Handshake(Option<SessionID>),
     Data(Vec<u8>),
     Ping(u32),

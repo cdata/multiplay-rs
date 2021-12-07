@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use rand::{Fill, RngCore};
 use std::sync::Arc;
 
 use async_std::sync::Mutex;
@@ -40,6 +41,7 @@ pub trait RtcTransport {
 pub static MAX_UNORDERED_DATA_SIZE: usize = 1024usize;
 
 pub struct RtcServer {
+    admin_secret: String,
     shared_sessions: Arc<Mutex<Sessions>>,
 
     game_send_to_server: Sender<OutgoingMessage>,
@@ -294,7 +296,14 @@ impl RtcServer {
         let (server_send_to_game, game_receive_from_server) = flume::unbounded::<IncomingMessage>();
         let (game_send_to_server, server_receive_from_game) = flume::unbounded::<OutgoingMessage>();
 
+        let mut random_bytes: [u8; 16] = [0; 16];
+        rand::thread_rng().fill_bytes(&mut random_bytes);
+
         RtcServer {
+            admin_secret: random_bytes
+                .iter()
+                .map(|byte| format!("{:x}", byte))
+                .collect::<String>(),
             shared_sessions,
 
             server_send_to_game,
@@ -310,6 +319,8 @@ impl RtcServer {
     }
 
     pub async fn run<T: RtcTransport + 'static>(self, transports: Vec<T>) -> Result<()> {
+        info!("RTC server admin secret: {}", self.admin_secret);
+
         let server_receive_from_game = self.server_receive_from_game.clone();
         let server_send_to_game = self.server_send_to_game.clone();
         let shared_sessions = self.shared_sessions.clone();

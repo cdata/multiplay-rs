@@ -37,10 +37,6 @@ impl TestTransport {
             outgoing_message_count,
         }
     }
-
-    async fn get_outgoing_message_count(&self) -> u32 {
-        self.outgoing_message_count.lock().await.clone()
-    }
 }
 
 #[async_trait]
