@@ -20,6 +20,7 @@
   --color-mode: 'light';
   --background: var(--color-grey-200);
   --primary-text: var(--color-grey-900);
+  --primary-border: var(--color-grey-300);
   --table-secondary: var(--color-grey-600);
   --table-control: var(--color-grey-700);
   --table-hover: var(--color-grey-100);
@@ -27,6 +28,10 @@
   --sidebar-text: var(--color-grey-500);
   --sidebar-text-hover: var(--color-grey-400);
   --sidebar-button-hover: var(--color-grey-600);
+  --status-good: var(--color-green-500);
+  --status-warning: var(--color-yellow-500);
+  --status-critical: var(--color-red-500);
+  --button-background-critical: var(--color-red-500);
 
   // TODO: Add --color-mode: 'dark' theme.
 
