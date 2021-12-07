@@ -7,7 +7,7 @@ type TableProps = {
 const Table = ({ connections }: TableProps) => {
   return (
     <>
-      <table>
+      <table className="table">
         <thead>
           <tr>
             <td>Session ID</td>

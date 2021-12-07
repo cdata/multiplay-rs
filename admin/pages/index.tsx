@@ -1,7 +1,6 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import Table from '../components/Table';
-import styles from '../styles/Home.module.css';
 
 // Mock data
 const data: Connection[] = [
@@ -12,21 +11,17 @@ const data: Connection[] = [
 
 const Connections: NextPage = () => {
   return (
-    <div className={styles.container}>
+    <div>
       <Head>
         <title>Connections</title>
         <meta name="description" content="Server connections" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className={styles.main}>
+      <main>
         <h1>Connections</h1>
         <Table connections={data} />
       </main>
-
-      <footer className={styles.footer}>
-        <p>footer</p>
-      </footer>
     </div>
   );
 };
