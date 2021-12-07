@@ -126,25 +126,38 @@ impl RtcServer {
                     .send_async(IncomingMessage::Received(session_id, data))
                     .await
                     .context("Failed to send 'Received' message to game"),
-                TransportIncomingMessage::Connected(session_id, admin_secret) => {
+                TransportIncomingMessage::Connected(session_id, maybe_secret) => {
                     let mut sessions = shared_sessions.lock().await;
+
                     // TODO: Need to validate that the transport type isn't already
                     // connected; if it is, the connection needs to be rejected!
                     if let Some(session) = sessions.get_mut(&session_id) {
-                        session.transports.insert(transport_type.clone());
+                        match maybe_secret {
+                            Some(secret) if session.admin && secret != admin_secret => {
+                                Err(anyhow!("Attempt to connect with invalid admin secret"))
+                            }
+                            None if session.admin => {
+                                Err(anyhow!("Attempt to connect as admin without secret"))
+                            }
+                            _ => {
+                                session.transports.insert(transport_type.clone());
 
-                        // As long as the client has a bulk transport, they can be considered
-                        // connected. Unordered messages can fall-back to sending over the bulk
-                        // transport.
-                        if session.has_transport(&Transport::Bulk) {
-                            return send_to_game
-                                .send_async(IncomingMessage::Connected(session_id))
-                                .await
-                                .context("Failed to send 'Connected' message to game");
+                                // As long as the client has a bulk transport, they can be considered
+                                // connected. Unordered messages can fall-back to sending over the bulk
+                                // transport.
+                                if session.has_transport(&Transport::Bulk) {
+                                    return send_to_game
+                                        .send_async(IncomingMessage::Connected(session_id))
+                                        .await
+                                        .context("Failed to send 'Connected' message to game");
+                                } else {
+                                    Ok(())
+                                }
+                            }
                         }
+                    } else {
+                        Ok(())
                     }
-
-                    Ok(())
                 }
                 TransportIncomingMessage::Disconnected(session_id) => {
                     let mut sessions = shared_sessions.lock().await;
