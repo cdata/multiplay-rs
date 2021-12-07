@@ -1,5 +1,5 @@
 [package]
-name = "multiplay-rs"
+name = "multiplay-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,6 +19,7 @@ rand = "0.8.4"
 log = "0.4"
 
 async-trait = "0.1.51"
+anyhow = "1.0.51"
 
 [dependencies.serde]
 version = "1.0.130"

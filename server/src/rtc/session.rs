@@ -2,11 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rtc::protocol::common::SessionID;
 
-// TODO: These should wrap unbounded channel ports
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum Transport {
     Bulk,
     Unordered,
+}
+
+impl ToString for Transport {
+    fn to_string(&self) -> String {
+        String::from(match self {
+            Transport::Bulk => "bulk",
+            Transport::Unordered => "unordered",
+        })
+    }
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -18,7 +26,6 @@ pub enum ConnectionQuality {
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum SessionStatus {
     Authenticating,
-    Connecting,
     Connected(ConnectionQuality),
     Disconnected,
 }
@@ -69,7 +76,7 @@ impl Session {
                 SessionStatus::Connected(ConnectionQuality::Partial)
             }
         } else {
-            SessionStatus::Connecting
+            SessionStatus::Disconnected
         }
     }
 }

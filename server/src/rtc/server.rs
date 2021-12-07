@@ -1,5 +1,6 @@
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use async_std::sync::Mutex;
 use flume::{Receiver, Sender};
@@ -8,34 +9,30 @@ use tokio::{select, task::JoinHandle};
 use crate::rtc::session::SessionStatus;
 
 use super::{
-    api::sessions::sessions_api,
     protocol::server::{
-        IncomingMessage, OutgoingMessage, TransportIncomingMessage, TransportOutgoingMessage,
+        IncomingMessage, OutgoingMessage, SessionControlMessage, TransportIncomingMessage,
+        TransportOutgoingMessage,
     },
-    session::{Sessions, Transport},
+    session::{Session, Sessions, Transport},
 };
 
-#[derive(Debug)]
-pub enum TransportError {
-    UnexpectedHalt,
-    NoAddress,
-    NoConnection,
-    SendFailed,
-}
-
-#[derive(Debug)]
-pub enum ServerError {
-    SendFailed,
-}
-
+/**
+ * Common signature for all transports.
+ * TODO: This is a trait because it's quite difficult to correctly type
+ * a generic async function. This could probably just be a function if
+ * I knew how to type it correctly.
+ * See also:
+ *  - https://stackoverflow.com/questions/65696254/is-it-possible-to-create-a-type-alias-for-async-functions
+ *  - https://stackoverflow.com/questions/61167939/return-an-async-function-from-a-function-in-rust
+ */
 #[async_trait]
-pub trait RtcTransport: Clone {
+pub trait RtcTransport {
     async fn start(
         self,
         shared_sessions: Arc<Mutex<Sessions>>,
         send_to_server: Sender<TransportIncomingMessage>,
         receive_from_server: Receiver<TransportOutgoingMessage>,
-    ) -> Result<(), TransportError>;
+    ) -> Result<()>;
 
     fn get_type(&self) -> Transport;
 }
@@ -53,6 +50,111 @@ pub struct RtcServer {
 }
 
 impl RtcServer {
+    async fn receive_messages_from_transport(
+        transport_type: Transport,
+        shared_sessions: Arc<Mutex<Sessions>>,
+        send_to_game: Sender<IncomingMessage>,
+        receiver: Receiver<TransportIncomingMessage>,
+    ) -> Result<()> {
+        while let Ok(message) = receiver.recv_async().await {
+            let result: Result<()> = match message {
+                TransportIncomingMessage::Solicited(socket_addr, transport_auth_sender) => {
+                    let (auth_sender, auth_receiver) = flume::unbounded::<SessionControlMessage>();
+
+                    let authorize_result = send_to_game
+                        .send_async(IncomingMessage::Solicited(socket_addr, auth_sender))
+                        .await
+                        .context("Error requesting authentication for new session");
+
+                    if let Err(_) = authorize_result {
+                        return authorize_result;
+                    }
+
+                    match auth_receiver
+                        .recv_async()
+                        .await
+                        .context("Error receiving authentication for new session")
+                    {
+                        Ok(message) => match message {
+                            SessionControlMessage::Accept(custom_session_id) => {
+                                let mut sessions = shared_sessions.lock().await;
+                                let mut session = Session::new();
+
+                                if let Some(session_id) = custom_session_id {
+                                    session.id = session_id;
+                                }
+
+                                let id = session.id;
+
+                                sessions.insert(id, session);
+
+                                transport_auth_sender
+                                    .send_async(SessionControlMessage::Accept(Some(id)))
+                                    .await
+                                    .context("Failed to forward session acceptance to transport")
+                            }
+                            SessionControlMessage::Reject(reason) => {
+                                info!("Session request rejected (reason: {:?})", reason);
+
+                                transport_auth_sender
+                                    .send_async(SessionControlMessage::Reject(reason))
+                                    .await
+                                    .context("Failed to forward session rejection to transport")
+                            }
+                        },
+                        Err(err) => Err(err),
+                    }
+                }
+                TransportIncomingMessage::Received(session_id, data) => send_to_game
+                    .send_async(IncomingMessage::Received(session_id, data))
+                    .await
+                    .context("Failed to send 'Received' message to game"),
+                TransportIncomingMessage::Connected(session_id) => {
+                    let mut sessions = shared_sessions.lock().await;
+                    // TODO: Need to validate that the transport type isn't already
+                    // connected; if it is, the connection needs to be rejected!
+                    if let Some(session) = sessions.get_mut(&session_id) {
+                        session.transports.insert(transport_type.clone());
+
+                        // As long as the client has a bulk transport, they can be considered
+                        // connected. Unordered messages can fall-back to sending over the bulk
+                        // transport.
+                        if session.has_transport(&Transport::Bulk) {
+                            return send_to_game
+                                .send_async(IncomingMessage::Connected(session_id))
+                                .await
+                                .context("Failed to send 'Connected' message to game");
+                        }
+                    }
+
+                    Ok(())
+                }
+                TransportIncomingMessage::Disconnected(session_id) => {
+                    let mut sessions = shared_sessions.lock().await;
+                    // TODO: Do we need a "degraded" connection state when there is no
+                    // available unordered transport?
+                    if let Some(session) = sessions.get_mut(&session_id) {
+                        session.transports.remove(&transport_type);
+                        if !session.has_transport(&Transport::Bulk) {
+                            return send_to_game
+                                .send_async(IncomingMessage::Disconnected(session_id))
+                                .await
+                                .context("Failed to send 'Disconnected' message to game");
+                        }
+                    }
+
+                    Ok(())
+                }
+            };
+
+            if let Err(error) = result {
+                error!("{:?}", error);
+            }
+        }
+
+        Ok(())
+    }
+
     async fn run_receive_message_loop(
         shared_sessions: Arc<Mutex<Sessions>>,
         send_to_game: Sender<IncomingMessage>,
@@ -85,47 +187,25 @@ impl RtcServer {
                         Sender<IncomingMessage>,
                         Receiver<TransportIncomingMessage>,
                     )| async move {
-                        while let Ok(message) = receiver.recv_async().await {
-                            let mut sessions = shared_sessions.lock().await;
+                        let transport_string = transport_type.to_string();
+                        let result = RtcServer::receive_messages_from_transport(
+                            transport_type,
+                            shared_sessions,
+                            send_to_game,
+                            receiver,
+                        )
+                        .await
+                        .context(format!(
+                            "Error receiving messages from {} transport...",
+                            transport_string
+                        ));
 
-                            match message {
-                                TransportIncomingMessage::Connected(session_id) => {
-                                    // TODO: Need to validate that the transport type isn't already
-                                    // connected; if it is, the connection needs to be rejected!
-                                    if let Some(session) = sessions.get_mut(&session_id) {
-                                        session.transports.insert(transport_type.clone());
-
-                                        // As long as the client has a bulk transport, they can be considered
-                                        // connected. Unordered messages can fall-back to sending over the bulk
-                                        // transport.
-                                        if session.has_transport(&Transport::Bulk) {
-                                            send_to_game
-                                                .send_async(IncomingMessage::Connected(session_id))
-                                                .await;
-                                        }
-                                    }
-                                }
-                                TransportIncomingMessage::Disconnected(session_id) => {
-                                    // TODO: Do we need a "degraded" connection state when there is no
-                                    // available unordered transport?
-                                    if let Some(session) = sessions.get_mut(&session_id) {
-                                        session.transports.remove(&transport_type);
-                                        if !session.has_transport(&Transport::Bulk) {
-                                            send_to_game
-                                                .send_async(IncomingMessage::Disconnected(
-                                                    session_id,
-                                                ))
-                                                .await;
-                                        }
-                                    }
-                                }
-                                TransportIncomingMessage::Received(session_id, data) => {
-                                    send_to_game
-                                        .send_async(IncomingMessage::Received(session_id, data))
-                                        .await;
-                                }
+                        match result {
+                            Ok(_) => {
+                                info!("Receive loop for {} transport stopped", transport_string)
                             }
-                        }
+                            Err(error) => error!("{:?}", error),
+                        };
                     },
                 ),
         )
@@ -197,8 +277,6 @@ impl RtcServer {
                 _ => info!("Done"),
             };
         }
-
-        // fn run_http_session_api(shared_sessions: Arc<Mutex<Sessions>>)
     }
 
     pub fn new() -> Self {
@@ -217,14 +295,7 @@ impl RtcServer {
         }
     }
 
-    pub async fn run<T>(
-        self,
-        api_address: SocketAddr,
-        transports: Vec<T>,
-    ) -> Result<(), ServerError>
-    where
-        T: RtcTransport + 'static,
-    {
+    pub async fn run<T: RtcTransport + 'static>(self, transports: Vec<T>) -> Result<()> {
         let server_receive_from_game = self.server_receive_from_game.clone();
         let server_send_to_game = self.server_send_to_game.clone();
         let shared_sessions = self.shared_sessions.clone();
@@ -235,9 +306,13 @@ impl RtcServer {
         let mut bulk_transport_receivers: Vec<Receiver<TransportIncomingMessage>> = Vec::new();
         let mut unordered_transport_receivers: Vec<Receiver<TransportIncomingMessage>> = Vec::new();
 
-        let mut transport_handles: Vec<JoinHandle<Result<(), TransportError>>> = Vec::new();
+        let mut transport_handles: Vec<JoinHandle<Result<()>>> = Vec::new();
 
+        // Spin up a task thread for each transport, and establish
+        // communication over dedicated mpsc channels organized by
+        // transport type
         for transport in transports.into_iter() {
+            // let (transport_type, start_fn) = transport;
             let (server_send_to_transport, transport_receive_from_server) =
                 flume::unbounded::<TransportOutgoingMessage>();
             let (transport_send_to_server, server_receive_from_transport) =
@@ -277,28 +352,29 @@ impl RtcServer {
 
         let transports_join = futures::future::try_join_all(transport_handles);
 
-        let http_api = sessions_api(shared_sessions.clone(), server_send_to_game.clone());
-        let http_api_handle = tokio::task::spawn(warp::serve(http_api).run(api_address));
-
         select! {
-            _ = send_message_loop => {
-                println!("Send message loop stopped");
-            },
+            _ = send_message_loop =>
+                Err(anyhow!("Send message loop stopped")),
 
-            _ = receive_message_loop => {
-                println!("Receive message loop stopped");
-            },
+            _ = receive_message_loop =>
+                Err(anyhow!("Receive message loop stopped")),
 
-            _ = transports_join => {
-                println!("Transport threads joined");
+            result = transports_join => {
+                match result {
+                    Err(error) =>
+                        Err(error).context("Transport thread join error"),
+                    Ok(results) => {
+                        for result in results {
+                            if let Err(error) = result {
+                                return Err(error)
+                                    .context("Transport thread joined because of error in transport")
+                            }
+                        }
+                        Ok(())
+                    }
+                }
             },
-
-            _ = http_api_handle => {
-                println!("HTTP session API stopped");
-            }
         }
-
-        Ok(())
     }
 
     pub fn game_channel(&self) -> (Sender<OutgoingMessage>, Receiver<IncomingMessage>) {

@@ -2,10 +2,11 @@ use core::fmt::Debug;
 use flume::Sender;
 use std::net::SocketAddr;
 
-use serde::{Deserialize, Serialize};
-
 use super::common::SessionID;
 
+/**
+ * Network Server Thread <-> Game Thread
+ */
 #[derive(Debug)]
 pub enum OutgoingMessage {
     Send(SessionID, Vec<u8>),
@@ -14,13 +15,13 @@ pub enum OutgoingMessage {
 
 #[derive(Debug)]
 pub enum SessionControlMessage {
-    Accept(SessionID),
-    Kick(SessionID),
+    Accept(Option<SessionID>),
+    Reject(Option<String>),
 }
 
 #[derive(Debug)]
 pub enum IncomingMessage {
-    Solicited(SessionID, Option<SocketAddr>, Sender<SessionControlMessage>),
+    Solicited(Option<SocketAddr>, Sender<SessionControlMessage>),
     Connected(SessionID),
     Disconnected(SessionID),
     Reconnected(SessionID),
@@ -28,20 +29,19 @@ pub enum IncomingMessage {
     Received(SessionID, Vec<u8>),
 }
 
+/**
+ * Network Server Thread <-> Network Transport Thread
+ */
 #[derive(Debug)]
 pub enum TransportIncomingMessage {
-    Received(SessionID, Vec<u8>),
+    Solicited(Option<SocketAddr>, Sender<SessionControlMessage>),
     Connected(SessionID),
     Disconnected(SessionID),
+    Received(SessionID, Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum TransportOutgoingMessage {
     Send(Vec<SessionID>, Vec<u8>),
     Purge(SessionID),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SessionPayload {
-    pub id: SessionID,
 }

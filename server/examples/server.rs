@@ -2,12 +2,12 @@ extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 
-use std::path::Path;
+// use std::path::Path;
 
-use multiplay_rs::{
-    assets::serve_assets,
-    rtc::{server::RtcServer, transport::websockets::WebSocketTransport},
-};
+// use multiplay_rs::{
+//     assets::serve_assets,
+//     rtc::{server::RtcServer, transport::websockets::WebSocketTransport},
+// };
 
 #[tokio::main]
 pub async fn main() {
@@ -15,19 +15,19 @@ pub async fn main() {
 
     info!("Starting server example...");
 
-    let static_server_runs = serve_assets(Path::new("demo"), ([127, 0, 0, 1], 8000).into());
+    // let static_server_runs = serve_assets(Path::new("demo"), ([127, 0, 0, 1], 8000).into());
 
-    let rtc_server = RtcServer::new();
+    // let rtc_server = RtcServer::new();
 
-    let rtc_server_runs = rtc_server.run(
-        ([127, 0, 0, 1], 8001).into(),
-        vec![WebSocketTransport::new(([127, 0, 0, 1], 8002).into())],
-    );
+    // let rtc_server_runs = rtc_server.run(
+    //     ([127, 0, 0, 1], 8001).into(),
+    //     vec![WebSocketTransport::new(([127, 0, 0, 1], 8002).into())],
+    // );
 
-    tokio::select! {
-        _ = static_server_runs => println!("Static server stopped"),
-        _ = rtc_server_runs => println!("RTC server stopped")
-    }
+    // tokio::select! {
+    //     _ = static_server_runs => println!("Static server stopped"),
+    //     _ = rtc_server_runs => println!("RTC server stopped")
+    // }
 
     info!("Server example over!");
     // let rtc_server = RtcServer::new(vec![WebSocketTransport::new(([127, 0, 0, 1], 8002).into())]);

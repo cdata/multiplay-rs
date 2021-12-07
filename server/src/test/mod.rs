@@ -1,12 +1,57 @@
 mod helpers;
+use std::sync::Arc;
 
+use crate::rtc::protocol::server::TransportIncomingMessage;
+use crate::rtc::protocol::server::TransportOutgoingMessage;
+use crate::rtc::server::RtcServer;
+use crate::rtc::server::RtcTransport;
+use crate::rtc::session::Sessions;
+use crate::rtc::session::Transport;
+use anyhow::Result;
+use async_std::sync::Mutex;
+use async_trait::async_trait;
+use flume::Receiver;
+use flume::Sender;
+
+struct TestTransport {
+    state: u32,
+}
+
+#[async_trait]
+impl RtcTransport for TestTransport {
+    fn get_type(&self) -> Transport {
+        Transport::Bulk
+    }
+
+    async fn start(
+        self,
+        shared_sessions: Arc<Mutex<Sessions>>,
+        tx: Sender<TransportIncomingMessage>,
+        rx: Receiver<TransportOutgoingMessage>,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn start_server() {
+    helpers::init_logging();
+
+    let rtc_server = RtcServer::new();
+
+    let result = rtc_server.run(vec![TestTransport { state: 0 }]).await;
+
+    println!("Result: {:?}", result);
+}
+
+/*
 mod sessions {
     use super::helpers;
     use crate::rtc::{
         protocol::server::{
             IncomingMessage, OutgoingMessage, SessionControlMessage, SessionPayload,
         },
-        sessions::serve_sessions,
+        _sessions::serve_sessions,
     };
     use ntest::timeout;
 
@@ -81,3 +126,4 @@ mod sessions {
         };
     }
 }
+*/
