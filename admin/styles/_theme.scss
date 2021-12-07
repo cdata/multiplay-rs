@@ -18,9 +18,10 @@
 
   // Light mode/dark mode
   --color-mode: 'light';
-  --background: var(--color-grey-200);
+  --background: var(--color-grey-100);
   --primary-text: var(--color-grey-900);
   --primary-border: var(--color-grey-300);
+  --table-background: var(--color-white);
   --table-secondary: var(--color-grey-600);
   --table-control: var(--color-grey-700);
   --table-hover: var(--color-grey-100);
@@ -41,4 +42,10 @@
   --font-weight-bold: 700;
   --font-weight-semi-bold: 600;
   --font-weight-regular: 600;
+
+  // Global values
+  --border: 1px solid var(--primary-border);
+  --border-radius: 8px;
+  --table-heading-padding: 0.75rem 1.5rem;
+  --table-cell-padding: 1.5rem;
 }

@@ -1,3 +1,31 @@
+.table-wrapper {
+  background-color: var(--table-background);
+  border-radius: var(--border-radius);
+  border: var(--border);
+}
+
+.table-heading {
+  margin-top: 2rem;
+  padding-left: var(--table-cell-padding);
+  padding-right: var(--table-cell-padding);
+}
+
 .table {
+  margin-top: 2rem;
   font-weight: var(--font-weight-semi-bold);
+  width: 100%;
+
+  thead,
+  tr:not(:last-of-type) {
+    border-bottom: var(--border);
+  }
+
+  thead td {
+    color: var(--table-secondary);
+    padding: var(--table-heading-padding);
+  }
+
+  tbody td {
+    padding: var(--table-cell-padding);
+  }
 }

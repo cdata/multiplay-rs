@@ -1,0 +1,13 @@
+.layout {
+  display: flex;
+  height: 100%;
+  background-color: var(--background);
+}
+
+main {
+  --flow-space: 3.375rem;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}

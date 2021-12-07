@@ -9,7 +9,8 @@
 }
 
 html,
-body {
+body,
+#__next {
   height: 100%;
 }
 
@@ -32,6 +33,11 @@ button,
 textarea,
 select {
   font: inherit;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
 }
 
 p,

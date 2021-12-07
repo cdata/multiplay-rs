@@ -1,0 +1,12 @@
+.sidebar {
+  width: 255px;
+  background-color: var(--sidebar-background);
+  color: var(--sidebar-text);
+
+  &__header {
+    height: 131px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}

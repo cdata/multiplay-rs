@@ -4,6 +4,13 @@ const initialConnections: Connection[] = [
   { id: 'abc123xyz', bulkConnection: 20, unorderedConnection: 100 },
   { id: '5678asdf0', bulkConnection: false, unorderedConnection: 999 },
   { id: '321wsdf88', bulkConnection: 50, unorderedConnection: false },
+  { id: 'abc123xyz', bulkConnection: 20, unorderedConnection: 100 },
+  { id: '5678asdf0', bulkConnection: false, unorderedConnection: 999 },
+  { id: '321wsdf88', bulkConnection: 50, unorderedConnection: false },
+  { id: 'abc123xyz', bulkConnection: 20, unorderedConnection: 100 },
+  { id: '5678asdf0', bulkConnection: false, unorderedConnection: 999 },
+  { id: '321wsdf88', bulkConnection: 50, unorderedConnection: false },
+  { id: 'abc123xyz', bulkConnection: 20, unorderedConnection: 100 },
 ];
 
 export default function useMockConnections() {

@@ -5,7 +5,10 @@ const Table = () => {
   const connections = useMockConnections();
 
   return (
-    <>
+    <div className="table-wrapper">
+      <div className="table-heading">
+        <h2>All connections</h2>
+      </div>
       <table className="table">
         <thead>
           <tr>
@@ -21,7 +24,7 @@ const Table = () => {
           ))}
         </tbody>
       </table>
-    </>
+    </div>
   );
 };
 
