@@ -1,10 +1,9 @@
+import useMockConnections from '../hooks/useMockConnections';
 import TableRow from './TableRow';
 
-type TableProps = {
-  connections: Connection[];
-};
+const Table = () => {
+  const connections = useMockConnections();
 
-const Table = ({ connections }: TableProps) => {
   return (
     <>
       <table className="table">

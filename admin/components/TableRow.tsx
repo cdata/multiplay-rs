@@ -1,3 +1,5 @@
+import Ping from './Ping';
+
 type TableRowProps = {
   connection: Connection;
 };
@@ -7,14 +9,10 @@ const TableRow = ({ connection }: TableRowProps) => {
     <tr>
       <td>{connection.id}</td>
       <td>
-        {connection.bulkConnection === false
-          ? 'Disconnected'
-          : connection.bulkConnection + 'ms'}
+        <Ping ping={connection.bulkConnection} />
       </td>
       <td>
-        {connection.unorderedConnection === false
-          ? 'Disconnected'
-          : connection.unorderedConnection + 'ms'}
+        <Ping ping={connection.unorderedConnection} />
       </td>
       <td>
         <button>Kick</button>
