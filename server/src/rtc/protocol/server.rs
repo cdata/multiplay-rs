@@ -34,8 +34,12 @@ pub enum IncomingMessage {
  */
 #[derive(Debug)]
 pub enum TransportIncomingMessage {
-    Solicited(Option<SocketAddr>, Sender<SessionControlMessage>),
-    Connected(SessionID),
+    Solicited(
+        Option<SocketAddr>,
+        Option<String>, // Optional admin secret
+        Sender<SessionControlMessage>,
+    ),
+    Connected(SessionID, Option<String>),
     Disconnected(SessionID),
     Received(SessionID, Vec<u8>),
 }

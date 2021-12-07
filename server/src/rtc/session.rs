@@ -33,6 +33,7 @@ pub enum SessionStatus {
 pub struct Session {
     pub id: SessionID,
     pub authenticated: bool,
+    pub admin: bool,
     pub transports: BTreeSet<Transport>,
 }
 
@@ -41,6 +42,7 @@ impl Session {
         Session {
             id: Self::make_id(),
             authenticated: false,
+            admin: false,
             transports: BTreeSet::new(),
         }
     }

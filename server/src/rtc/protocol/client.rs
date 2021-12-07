@@ -5,8 +5,9 @@ use super::common::SessionID;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    AdminHandshake(String),
-    Handshake(Option<SessionID>),
+    // The first field is a session ID, for reconnecting after connection loss
+    // The second field is for the admin secret, used when introspecting server state
+    Handshake(Option<SessionID>, Option<String>),
     Data(Vec<u8>),
     Ping(u32),
     Pong(u32),

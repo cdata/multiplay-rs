@@ -54,19 +54,32 @@ pub struct RtcServer {
 impl RtcServer {
     async fn receive_messages_from_transport(
         transport_type: Transport,
+        admin_secret: String,
         shared_sessions: Arc<Mutex<Sessions>>,
         send_to_game: Sender<IncomingMessage>,
         receiver: Receiver<TransportIncomingMessage>,
     ) -> Result<()> {
         while let Ok(message) = receiver.recv_async().await {
             let result: Result<()> = match message {
-                TransportIncomingMessage::Solicited(socket_addr, transport_auth_sender) => {
+                TransportIncomingMessage::Solicited(socket_addr, secret, transport_auth_sender) => {
                     let (auth_sender, auth_receiver) = flume::unbounded::<SessionControlMessage>();
+                    let mut is_admin: bool = false;
 
-                    let authorize_result = send_to_game
-                        .send_async(IncomingMessage::Solicited(socket_addr, auth_sender))
-                        .await
-                        .context("Error requesting authentication for new session");
+                    let authorize_result = match secret {
+                        None => send_to_game
+                            .send_async(IncomingMessage::Solicited(socket_addr, auth_sender))
+                            .await
+                            .context("Error requesting authentication for new session"),
+                        Some(secret) => match secret == admin_secret {
+                            true => {
+                                is_admin = true;
+                                auth_sender
+                                    .send(SessionControlMessage::Accept(None))
+                                    .with_context(|| "Failed to send admin acceptance signal")
+                            }
+                            false => Err(anyhow!("Failed admin authentication attempt")),
+                        },
+                    };
 
                     if let Err(_) = authorize_result {
                         return authorize_result;
@@ -85,6 +98,8 @@ impl RtcServer {
                                 if let Some(session_id) = custom_session_id {
                                     session.id = session_id;
                                 }
+
+                                session.admin = is_admin;
 
                                 let id = session.id;
 
@@ -111,7 +126,7 @@ impl RtcServer {
                     .send_async(IncomingMessage::Received(session_id, data))
                     .await
                     .context("Failed to send 'Received' message to game"),
-                TransportIncomingMessage::Connected(session_id) => {
+                TransportIncomingMessage::Connected(session_id, admin_secret) => {
                     let mut sessions = shared_sessions.lock().await;
                     // TODO: Need to validate that the transport type isn't already
                     // connected; if it is, the connection needs to be rejected!
@@ -158,6 +173,7 @@ impl RtcServer {
     }
 
     async fn run_receive_message_loop(
+        admin_secret: String,
         shared_sessions: Arc<Mutex<Sessions>>,
         send_to_game: Sender<IncomingMessage>,
         bulk_transport_receivers: Vec<Receiver<TransportIncomingMessage>>,
@@ -169,6 +185,7 @@ impl RtcServer {
                 .map(|receiver| {
                     (
                         Transport::Bulk,
+                        admin_secret.clone(),
                         shared_sessions.clone(),
                         send_to_game.clone(),
                         receiver,
@@ -177,14 +194,16 @@ impl RtcServer {
                 .chain(unordered_transport_receivers.into_iter().map(|receiver| {
                     (
                         Transport::Unordered,
+                        admin_secret.clone(),
                         shared_sessions.clone(),
                         send_to_game.clone(),
                         receiver,
                     )
                 }))
                 .map(
-                    |(transport_type, shared_sessions, send_to_game, receiver): (
+                    |(transport_type, admin_secret, shared_sessions, send_to_game, receiver): (
                         Transport,
+                        String,
                         Arc<Mutex<Sessions>>,
                         Sender<IncomingMessage>,
                         Receiver<TransportIncomingMessage>,
@@ -192,6 +211,7 @@ impl RtcServer {
                         let transport_string = transport_type.to_string();
                         let result = RtcServer::receive_messages_from_transport(
                             transport_type,
+                            admin_secret,
                             shared_sessions,
                             send_to_game,
                             receiver,
@@ -362,6 +382,7 @@ impl RtcServer {
         }
 
         let receive_message_loop = RtcServer::run_receive_message_loop(
+            self.admin_secret.clone(),
             shared_sessions.clone(),
             server_send_to_game.clone(),
             bulk_transport_receivers,

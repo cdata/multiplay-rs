@@ -221,7 +221,7 @@ async fn handle_message(
             }
         },
         None => match serde_cbor::de::from_slice(message.as_bytes()) {
-            Ok(Message::Handshake(maybe_session_id)) => {
+            Ok(Message::Handshake(maybe_session_id, maybe_admin_secret)) => {
                 match maybe_session_id {
                     Some(session_id) => {
                         let mut state = internal_state.lock().await;
@@ -230,7 +230,10 @@ async fn handle_message(
                             .insert(connection_address, session_id);
 
                         match send_to_server
-                            .send_async(TransportIncomingMessage::Connected(session_id))
+                            .send_async(TransportIncomingMessage::Connected(
+                                session_id,
+                                maybe_admin_secret,
+                            ))
                             .await
                         {
                             Err(error) => {
@@ -246,6 +249,7 @@ async fn handle_message(
                         if let Err(error) = send_to_server
                             .send_async(TransportIncomingMessage::Solicited(
                                 Some(connection_address.clone()),
+                                maybe_admin_secret,
                                 auth_tx,
                             ))
                             .await
