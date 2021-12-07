@@ -95,7 +95,7 @@ async fn start_warp(
     internal_state: Arc<Mutex<InternalState>>,
     shared_sessions: Arc<Mutex<Sessions>>,
     send_to_server: Sender<TransportIncomingMessage>,
-) -> impl warp::Future {
+) -> Result<()> {
     let with_internal_state = warp::any().map(move || internal_state.clone());
     let with_shared_sessions = warp::any().map(move || shared_sessions.clone());
     let with_send_to_server = warp::any().map(move || send_to_server.clone());
@@ -139,7 +139,9 @@ async fn start_warp(
 
     info!("Address: {}", address);
 
-    warp::serve(routes).run(address)
+    warp::serve(routes).run(address).await;
+
+    Ok(())
 }
 
 /**

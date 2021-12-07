@@ -13,7 +13,9 @@ create_session.addEventListener('click', async () => {
 
 connect_socket.addEventListener('click', () => {
   const socket = new WebSocket('ws://localhost:8001');
-  socket.connect();
+  socket.onopen = () => {
+    socket.send("Hello, world!");
+  };
 });
 
 connect_rtc.addEventListener('click', async () => {

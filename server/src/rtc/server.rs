@@ -221,6 +221,8 @@ impl RtcServer {
         while let Ok(message) = receive_from_game.recv_async().await {
             let sessions = shared_sessions.lock().await;
 
+            info!("Got message to send...");
+
             let (session_ids, data) = match message {
                 OutgoingMessage::Broadcast(data) => (sessions.keys().copied().collect(), data),
                 OutgoingMessage::Send(session_id, data) => (vec![session_id], data),
@@ -252,10 +254,17 @@ impl RtcServer {
                     _ => false,
                 });
 
+            info!("Bulk sending {:?} to {:?}", data, bulk_session_ids);
+            info!(
+                "Unordered sending {:?} to {:?}",
+                data, unordered_session_ids
+            );
+
             let send_futures = unordered_transport_senders
                 .iter()
                 .filter(|_| unordered_session_ids.len() > 0)
                 .map(|sender| {
+                    info!("Sending to unordered transport...");
                     sender.send_async(TransportOutgoingMessage::Send(
                         unordered_session_ids.clone(),
                         data.clone(),
@@ -266,6 +275,7 @@ impl RtcServer {
                         .iter()
                         .filter(|_| bulk_session_ids.len() > 0)
                         .map(|sender| {
+                            info!("Sending to bulk transport...");
                             sender.send_async(TransportOutgoingMessage::Send(
                                 bulk_session_ids.clone(),
                                 data.clone(),
@@ -274,7 +284,7 @@ impl RtcServer {
                 );
 
             match futures::future::try_join_all(send_futures).await {
-                _ => info!("Done"),
+                _ => info!("Done sending message to transports"),
             };
         }
     }
@@ -293,6 +303,10 @@ impl RtcServer {
             game_send_to_server,
             game_receive_from_server,
         }
+    }
+
+    pub fn get_sessions(&self) -> Arc<Mutex<Sessions>> {
+        self.shared_sessions.clone()
     }
 
     pub async fn run<T: RtcTransport + 'static>(self, transports: Vec<T>) -> Result<()> {
