@@ -43,8 +43,6 @@ async fn client_handshakes_server() {
     };
 
     let client_runs = async move {
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-
         info!("Connecting...");
 
         let (client, _) = connect_async(Url::parse("ws://localhost:8000").unwrap())
