@@ -17,7 +17,7 @@ use bimap::BiMap;
 use flume::{Receiver, Sender};
 use futures::{
     stream::{SplitSink, SplitStream},
-    StreamExt,
+    SinkExt, StreamExt,
 };
 use tokio::select;
 use warp::{
@@ -112,6 +112,8 @@ async fn start_warp(
              shared_sessions: Arc<Mutex<Sessions>>,
              send_to_server: Sender<TransportIncomingMessage>,
              maybe_address| {
+                info!("Warp connection started......");
+
                 ws.on_upgrade(move |websocket| async move {
                     match maybe_address {
                         Some(address) => {
@@ -119,6 +121,7 @@ async fn start_warp(
 
                             let mut state = internal_state.lock().await;
                             state.connections.insert(address, tx);
+                            drop(state);
 
                             handle_connection(
                                 rx,
@@ -137,7 +140,7 @@ async fn start_warp(
             },
         );
 
-    info!("Address: {}", address);
+    info!("Starting warp on address: {}", address);
 
     warp::serve(routes).run(address).await;
 
@@ -205,85 +208,110 @@ async fn handle_message(
     connection_address: SocketAddr,
     send_to_server: Sender<TransportIncomingMessage>,
 ) -> Result<()> {
+    info!("MESSAGE: {:?}", message);
     match get_session_id(internal_state.clone(), connection_address).await {
-        Some(session_id) => match serde_cbor::de::from_slice(message.as_bytes()) {
-            Ok(Message::Data(message)) => match send_to_server
-                .send_async(TransportIncomingMessage::Received(session_id, message))
-                .await
-            {
-                error @ Err(_) => error.context("Error forwarding message data to server"),
-                _ => Ok(()),
-            },
-            Err(error) => Err(error).context("Web Socket payload deserialization error"),
-            _ => {
-                warn!("Unexpected Web Socket message payload");
-                Ok(())
+        Some(session_id) => {
+            info!("BAD?");
+            match serde_cbor::de::from_slice(message.as_bytes()) {
+                Ok(Message::Data(message)) => match send_to_server
+                    .send_async(TransportIncomingMessage::Received(session_id, message))
+                    .await
+                {
+                    error @ Err(_) => error.context("Error forwarding message data to server"),
+                    _ => Ok(()),
+                },
+                Err(error) => Err(error).context("Web Socket payload deserialization error"),
+                _ => {
+                    warn!("Unexpected Web Socket message payload");
+                    Ok(())
+                }
             }
-        },
-        None => match serde_cbor::de::from_slice(message.as_bytes()) {
-            Ok(Message::Handshake(maybe_session_id, maybe_admin_secret)) => {
-                match maybe_session_id {
-                    Some(session_id) => {
-                        let mut state = internal_state.lock().await;
-                        state
-                            .address_sessions
-                            .insert(connection_address, session_id);
+        }
+        None => {
+            info!("GOOOD");
+            match serde_cbor::de::from_slice(message.as_bytes()) {
+                Ok(Message::Handshake(maybe_session_id, maybe_admin_secret)) => {
+                    info!("GOOD");
+                    match maybe_session_id {
+                        Some(session_id) => {
+                            let mut state = internal_state.lock().await;
+                            state
+                                .address_sessions
+                                .insert(connection_address, session_id);
 
-                        match send_to_server
-                            .send_async(TransportIncomingMessage::Connected(
-                                session_id,
-                                maybe_admin_secret,
-                            ))
-                            .await
-                        {
-                            Err(error) => {
-                                Err(error).context("Error forwarding handshake to server")
-                            }
-                            _ => Ok(()),
-                        }
-                    }
-                    None => {
-                        // Connecting for the first time...
-                        let (auth_tx, auth_rx) = flume::unbounded::<SessionControlMessage>();
-
-                        if let Err(error) = send_to_server
-                            .send_async(TransportIncomingMessage::Solicited(
-                                Some(connection_address.clone()),
-                                maybe_admin_secret,
-                                auth_tx,
-                            ))
-                            .await
-                        {
-                            Err(error).context("Failed to forward new session handshake to server")
-                        } else {
-                            match auth_rx.recv_async().await {
-                                Ok(SessionControlMessage::Accept(Some(session_id))) => {
-                                    let mut state = internal_state.lock().await;
-                                    state
-                                        .address_sessions
-                                        .insert(connection_address, session_id);
-                                    Ok(())
-                                }
-                                Ok(SessionControlMessage::Reject(reason)) => {
-                                    Err(anyhow!("Session rejected (reason: {:?})", reason))
-                                }
-                                Ok(SessionControlMessage::Accept(None)) => {
-                                    Err(anyhow!("Connection was accepted without a session ID!"))
-                                }
+                            match send_to_server
+                                .send_async(TransportIncomingMessage::Connected(
+                                    session_id,
+                                    maybe_admin_secret,
+                                ))
+                                .await
+                            {
                                 Err(error) => {
-                                    Err(error).context("Error waiting for session authentication")
+                                    Err(error).context("Error forwarding handshake to server")
+                                }
+                                _ => Ok(()),
+                            }
+                        }
+                        None => {
+                            info!("GOOD");
+                            // Connecting for the first time...
+                            let (auth_tx, auth_rx) = flume::unbounded::<SessionControlMessage>();
+
+                            if let Err(error) = send_to_server
+                                .send_async(TransportIncomingMessage::Solicited(
+                                    Some(connection_address.clone()),
+                                    maybe_admin_secret,
+                                    auth_tx,
+                                ))
+                                .await
+                            {
+                                Err(error)
+                                    .context("Failed to forward new session handshake to server")
+                            } else {
+                                match auth_rx.recv_async().await {
+                                    Ok(SessionControlMessage::Accept(Some(session_id))) => {
+                                        let mut state = internal_state.lock().await;
+                                        state
+                                            .address_sessions
+                                            .insert(connection_address, session_id);
+
+                                        match state.connections.get_mut(&connection_address) {
+                                            Some(tx) => match serde_cbor::ser::to_vec(
+                                                &Message::Session(session_id),
+                                            ) {
+                                                Ok(payload) => tx
+                                                    .send(WarpMessage::binary(payload))
+                                                    .await
+                                                    .context("Failed to send message to client"),
+                                                _ => Err(anyhow!(
+                                                    "Failed to serialize message for client"
+                                                )),
+                                            },
+                                            None => Err(anyhow!(
+                                                "No sink half of the client WebSocket stream!"
+                                            )),
+                                        }
+                                    }
+                                    Ok(SessionControlMessage::Reject(reason)) => {
+                                        Err(anyhow!("Session rejected (reason: {:?})", reason))
+                                    }
+                                    Ok(SessionControlMessage::Accept(None)) => Err(anyhow!(
+                                        "Connection was accepted without a session ID!"
+                                    )),
+                                    Err(error) => Err(error)
+                                        .context("Error waiting for session authentication"),
                                 }
                             }
                         }
                     }
                 }
+                Err(error) => Err(error).context("Web Socket payload deserialization error"),
+                _ => {
+                    warn!("Unexpected Web Socket message payload");
+                    Ok(())
+                }
             }
-            Err(error) => Err(error).context("Web Socket payload deserialization error"),
-            _ => {
-                warn!("Unexpected Web Socket message payload");
-                Ok(())
-            }
-        },
+        }
     }
 }
 
@@ -294,7 +322,9 @@ async fn get_session_id(
     internal_state: Arc<Mutex<InternalState>>,
     address: SocketAddr,
 ) -> Option<SessionID> {
+    info!("LOCKING STATE");
     let state = internal_state.lock().await;
+    info!("GOT LOCK ON STATE");
     if let Some(session_id) = state.address_sessions.get_by_left(&address) {
         Some(*session_id)
     } else {

@@ -8,6 +8,7 @@ pub enum Message {
     // The first field is a session ID, for reconnecting after connection loss
     // The second field is for the admin secret, used when introspecting server state
     Handshake(Option<SessionID>, Option<String>),
+    Session(SessionID),
     Data(Vec<u8>),
     Ping(u32),
     Pong(u32),

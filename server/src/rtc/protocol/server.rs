@@ -11,6 +11,7 @@ use super::common::SessionID;
 pub enum OutgoingMessage {
     Send(SessionID, Vec<u8>),
     Broadcast(Vec<u8>),
+    Halt,
 }
 
 #[derive(Debug)]
