@@ -1,0 +1,30 @@
+.ping {
+  display: flex;
+  align-items: center;
+}
+
+.ping::before {
+  display: block;
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: black;
+  margin-right: 8px;
+}
+
+.ping--good::before {
+  background-color: var(--ping-good);
+}
+
+.ping--ok::before {
+  background-color: var(--ping-ok);
+}
+
+.ping--bad::before {
+  background-color: var(--ping-bad);
+}
+
+.ping--disconnected::before {
+  display: none;
+}

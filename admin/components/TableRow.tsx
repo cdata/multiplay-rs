@@ -1,3 +1,4 @@
+import Button from './Button';
 import Ping from './Ping';
 
 type TableRowProps = {
@@ -5,6 +6,10 @@ type TableRowProps = {
 };
 
 const TableRow = ({ connection }: TableRowProps) => {
+  function handleKick() {
+    alert('A user was kicked');
+  }
+
   return (
     <tr>
       <td>{connection.id}</td>
@@ -15,7 +20,7 @@ const TableRow = ({ connection }: TableRowProps) => {
         <Ping ping={connection.unorderedConnection} />
       </td>
       <td>
-        <button>Kick</button>
+        <Button onClick={handleKick}>Kick</Button>
       </td>
     </tr>
   );

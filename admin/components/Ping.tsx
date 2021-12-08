@@ -3,5 +3,19 @@ type Ping = {
 };
 
 export default function Ping({ ping }: Ping) {
-  return <>{ping === false ? 'Disconnected' : ping + 'ms'}</>;
+  let pingStatus = '';
+  if (ping === false) {
+    pingStatus = 'disconnected';
+  } else if (ping < 100) {
+    pingStatus = 'good';
+  } else if (ping > 100 && ping < 300) {
+    pingStatus = 'ok';
+  } else if (ping > 300) {
+    pingStatus = 'bad';
+  }
+  return (
+    <span className={`ping ping--${pingStatus}`}>
+      {pingStatus === 'disconnected' ? 'Disconnected' : ping + 'ms'}
+    </span>
+  );
 }
