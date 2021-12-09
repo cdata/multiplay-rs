@@ -208,30 +208,28 @@ async fn handle_message(
     connection_address: SocketAddr,
     send_to_server: Sender<TransportIncomingMessage>,
 ) -> Result<()> {
-    info!("MESSAGE: {:?}", message);
+    debug!(
+        "Received message from {:?}: {:?}",
+        connection_address, message
+    );
     match get_session_id(internal_state.clone(), connection_address).await {
-        Some(session_id) => {
-            info!("BAD?");
-            match serde_cbor::de::from_slice(message.as_bytes()) {
-                Ok(Message::Data(message)) => match send_to_server
-                    .send_async(TransportIncomingMessage::Received(session_id, message))
-                    .await
-                {
-                    error @ Err(_) => error.context("Error forwarding message data to server"),
-                    _ => Ok(()),
-                },
-                Err(error) => Err(error).context("Web Socket payload deserialization error"),
-                _ => {
-                    warn!("Unexpected Web Socket message payload");
-                    Ok(())
-                }
+        Some(session_id) => match serde_cbor::de::from_slice(message.as_bytes()) {
+            Ok(Message::Data(message)) => match send_to_server
+                .send_async(TransportIncomingMessage::Received(session_id, message))
+                .await
+            {
+                error @ Err(_) => error.context("Error forwarding message data to server"),
+                _ => Ok(()),
+            },
+            Err(error) => Err(error).context("Web Socket payload deserialization error"),
+            _ => {
+                warn!("Unexpected Web Socket message payload");
+                Ok(())
             }
-        }
+        },
         None => {
-            info!("GOOOD");
             match serde_cbor::de::from_slice(message.as_bytes()) {
                 Ok(Message::Handshake(maybe_session_id, maybe_admin_secret)) => {
-                    info!("GOOD");
                     match maybe_session_id {
                         Some(session_id) => {
                             let mut state = internal_state.lock().await;
@@ -253,7 +251,6 @@ async fn handle_message(
                             }
                         }
                         None => {
-                            info!("GOOD");
                             // Connecting for the first time...
                             let (auth_tx, auth_rx) = flume::unbounded::<SessionControlMessage>();
 
@@ -270,6 +267,7 @@ async fn handle_message(
                             } else {
                                 match auth_rx.recv_async().await {
                                     Ok(SessionControlMessage::Accept(Some(session_id))) => {
+                                        debug!("Got session ID for authing client: {}", session_id);
                                         let mut state = internal_state.lock().await;
                                         state
                                             .address_sessions

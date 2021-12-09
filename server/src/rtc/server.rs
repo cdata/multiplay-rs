@@ -79,6 +79,10 @@ impl RtcServer {
         self.shared_sessions.clone()
     }
 
+    pub fn get_admin_secret(&self) -> String {
+        self.admin_secret.clone()
+    }
+
     pub async fn run<T: RtcTransport + 'static>(self, transports: Vec<T>) -> Result<()> {
         info!("RTC server admin secret: {}", self.admin_secret);
 

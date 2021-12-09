@@ -1,12 +1,6 @@
-use futures::SinkExt;
-use futures::StreamExt;
-
-use std::time::Duration;
-use url::Url;
-
 use crate::rtc::{
     protocol::{
-        client::Message as ClientMessage,
+        client::Message,
         server::{IncomingMessage, OutgoingMessage, SessionControlMessage},
     },
     server::RtcServer,
@@ -14,8 +8,8 @@ use crate::rtc::{
 };
 
 use serial_test::serial;
-use tokio_tungstenite::connect_async;
-use tungstenite::Message;
+
+use super::helpers::WsTestClient;
 
 #[tokio::test]
 #[serial]
@@ -26,7 +20,6 @@ async fn client_handshakes_server() {
     let server_runs = server.run(vec![WebSocketTransport::new(([127, 0, 0, 1], 8000).into())]);
 
     let game_runs = async move {
-        info!("Awaiting message in game channel...");
         match game_rx.recv_async().await {
             Ok(message) => match message {
                 IncomingMessage::Solicited(_, auth_tx) => {
@@ -43,39 +36,81 @@ async fn client_handshakes_server() {
     };
 
     let client_runs = async move {
-        info!("Connecting...");
+        let client = WsTestClient::new("ws://localhost:8000");
 
-        let (client, _) = connect_async(Url::parse("ws://localhost:8000").unwrap())
-            .await
-            .unwrap();
-        info!("Connected!");
-
-        info!("Sending message...");
-        let (mut client_tx, mut client_rx) = client.split();
-        client_tx
-            .send(Message::Binary(
-                serde_cbor::ser::to_vec(&ClientMessage::Handshake(None, None)).unwrap(),
-            ))
+        client
+            .tx
+            .send_async(Message::Handshake(None, None))
             .await
             .unwrap();
 
         info!("Waiting for server response...");
 
-        while let Some(message) = client_rx.next().await {
+        while let Ok(message) = client.rx.recv_async().await {
             match message {
-                Ok(Message::Binary(bytes)) => match serde_cbor::de::from_slice(bytes.as_slice()) {
-                    Ok(ClientMessage::Session(session_id)) => {
-                        info!("GOT SESSION ID: {}", session_id);
-                        break;
-                    }
-                    _ => panic!("Deserialization failed"),
-                },
-                _ => panic!("Incorrect message type"),
+                Message::Session(session_id) => {
+                    info!("Got session ID: {}", session_id);
+                    break;
+                }
+                _ => panic!("Deserialization failed"),
             }
         }
 
+        client.close();
         game_tx.send(OutgoingMessage::Halt).unwrap();
     };
 
     let _result = tokio::join!(server_runs, client_runs, game_runs);
+}
+
+mod admin {
+    use serial_test::serial;
+
+    use crate::rtc::{
+        protocol::{client::Message, server::OutgoingMessage},
+        server::RtcServer,
+        transport::websockets::WebSocketTransport,
+    };
+
+    use super::WsTestClient;
+
+    #[tokio::test]
+    #[serial]
+    async fn client_handshakes_as_admin() {
+        super::super::helpers::init_logging();
+
+        let server = RtcServer::new();
+        let admin_secret = server.get_admin_secret();
+        let (game_tx, _game_rx) = server.game_channel();
+
+        let server_runs = server.run(vec![WebSocketTransport::new(([127, 0, 0, 1], 8000).into())]);
+
+        let client_runs = async {
+            let client = WsTestClient::new("ws://localhost:8000");
+
+            client
+                .tx
+                .send_async(Message::Handshake(None, Some(admin_secret)))
+                .await
+                .unwrap();
+
+            info!("Waiting for server response...");
+
+            while let Ok(message) = client.rx.recv_async().await {
+                match message {
+                    Message::Session(session_id) => {
+                        info!("Got session ID: {}", session_id);
+                        break;
+                    }
+                    _ => panic!("Deserialization failed"),
+                }
+            }
+
+            client.close();
+
+            game_tx.send_async(OutgoingMessage::Halt).await.unwrap();
+        };
+
+        let _result = tokio::join!(server_runs, client_runs);
+    }
 }
