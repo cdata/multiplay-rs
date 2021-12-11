@@ -320,9 +320,7 @@ async fn get_session_id(
     internal_state: Arc<Mutex<InternalState>>,
     address: SocketAddr,
 ) -> Option<SessionID> {
-    info!("LOCKING STATE");
     let state = internal_state.lock().await;
-    info!("GOT LOCK ON STATE");
     if let Some(session_id) = state.address_sessions.get_by_left(&address) {
         Some(*session_id)
     } else {

@@ -362,7 +362,6 @@ async fn receive_messages_from_transport(
                             );
                             let mut sessions = shared_sessions.lock().await;
                             let mut session = Session::new();
-                            info!("GOT LOCK ON SESSIONS");
 
                             if let Some(session_id) = custom_session_id {
                                 session.id = session_id;
