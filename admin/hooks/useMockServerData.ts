@@ -7,7 +7,7 @@ import type {
 } from '../lib/serverData';
 import { useState, useEffect } from 'react';
 
-export default function useMockConnections() {
+export default function useMockServerData() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [serverData, setServerData] = useState<ServerData>(new ServerData());
 
