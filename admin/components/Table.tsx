@@ -1,8 +1,9 @@
-import useMockConnections from '../hooks/useMockConnections';
+import useMockServerData from '../hooks/useMockServerData';
 import TableRow from './TableRow';
 
 const Table = () => {
-  const connections = useMockConnections();
+  const connections = useMockServerData();
+  console.log(connections);
 
   return (
     <div className="table-wrapper">
@@ -19,9 +20,10 @@ const Table = () => {
           </tr>
         </thead>
         <tbody>
-          {connections.map((connection) => (
-            <TableRow key={connection.id} connection={connection} />
-          ))}
+          {connections &&
+            connections.map((connection) => (
+              <TableRow key={connection.id} connection={connection} />
+            ))}
         </tbody>
       </table>
     </div>

@@ -1,5 +1,5 @@
-type Connection = {
+export type Connection = {
   id: string;
-  bulkConnection: number | false;
-  unorderedConnection: number | false;
+  bulkPing: number;
+  unorderedPing: number;
 };

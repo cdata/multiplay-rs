@@ -1,7 +1,12 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import SideBar from '../components/SideBar';
-import Table from '../components/Table';
+import dynamic from 'next/dynamic';
+
+// Table uses the useMockServerData hook, which relies on
+// CustomEvent and requestAnimationFrame. Neither of which are
+// available on the server, so we need to tell Next to only load
+// this component on the client.
+const Table = dynamic(() => import('../components/Table'), { ssr: false });
 
 const Connections: NextPage = () => {
   return (

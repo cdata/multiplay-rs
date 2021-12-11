@@ -1,10 +1,10 @@
 type Ping = {
-  ping: number | false;
+  ping: number;
 };
 
 export default function Ping({ ping }: Ping) {
   let pingStatus = '';
-  if (ping === false) {
+  if (ping === 0) {
     pingStatus = 'disconnected';
   } else if (ping < 100) {
     pingStatus = 'good';
