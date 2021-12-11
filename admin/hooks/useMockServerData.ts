@@ -13,7 +13,6 @@ export default function useMockConnections() {
 
   useEffect(() => {
     function handlePing(event) {
-      console.log('mockPing', event.detail);
       const { sessionId, ping, transport } = (<any>event)
         .detail as ServerDataPingEvent;
 
@@ -33,7 +32,6 @@ export default function useMockConnections() {
     }
 
     function handleConnected(event) {
-      console.log('mockConnected', event.detail);
       const { id } = (<any>event).detail as ServerDataConnectedEvent;
       setConnections((connections) => [
         ...connections,
@@ -42,7 +40,6 @@ export default function useMockConnections() {
     }
 
     function handleDisconnected(event) {
-      console.log('mockDisconnected', event.detail);
       const { id } = (<any>event).detail as ServerDataDisconnectedEvent;
       setConnections((connections) =>
         connections.filter((connection) => connection.id !== id)
