@@ -3,7 +3,7 @@ import TableRow from './TableRow';
 
 const Table = () => {
   const connections = useMockServerData();
-  console.log(connections);
+  // console.log(connections);
 
   return (
     <div className="table-wrapper">

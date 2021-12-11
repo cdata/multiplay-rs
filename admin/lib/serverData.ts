@@ -85,7 +85,7 @@ export default class ServerData extends EventTarget {
     const session = this.#sessions.splice(
       Math.floor(Math.random() * this.#sessions.length),
       1
-    );
+    )[0];
     this.#dispatch('disconnected', session);
   }
 
