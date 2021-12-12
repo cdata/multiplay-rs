@@ -7,7 +7,7 @@ use crate::rtc::{
         server::{SessionControlMessage, TransportIncomingMessage, TransportOutgoingMessage},
     },
     server::RtcTransport,
-    session::{Sessions, Transport},
+    session::Transport,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -40,6 +40,14 @@ impl InternalState {
             address_sessions: AddressSessions::new(),
         }
     }
+
+    pub fn get_connection(
+        &mut self,
+        id: &SessionID,
+    ) -> Option<&mut SplitSink<WebSocket, WarpMessage>> {
+        let address = self.address_sessions.get_by_right(id)?;
+        self.connections.get_mut(address)
+    }
 }
 
 pub struct WebSocketTransport {
@@ -64,22 +72,17 @@ impl RtcTransport for WebSocketTransport {
 
     async fn start(
         self,
-        shared_sessions: Arc<Mutex<Sessions>>,
         send_to_server: Sender<TransportIncomingMessage>,
         receive_from_server: Receiver<TransportOutgoingMessage>,
     ) -> Result<()> {
         let warp_runs = start_warp(
             self.address.clone(),
             self.internal_state.clone(),
-            shared_sessions.clone(),
             send_to_server,
         );
 
-        let outgoing_message_handler_runs = start_outgoing_message_handler(
-            receive_from_server,
-            self.internal_state.clone(),
-            shared_sessions.clone(),
-        );
+        let outgoing_message_handler_runs =
+            start_outgoing_message_handler(receive_from_server, self.internal_state.clone());
 
         select! {
             _ = warp_runs => info!("WebSocket server has stopped"),
@@ -93,23 +96,19 @@ impl RtcTransport for WebSocketTransport {
 async fn start_warp(
     address: SocketAddr,
     internal_state: Arc<Mutex<InternalState>>,
-    shared_sessions: Arc<Mutex<Sessions>>,
     send_to_server: Sender<TransportIncomingMessage>,
 ) -> Result<()> {
     let with_internal_state = warp::any().map(move || internal_state.clone());
-    let with_shared_sessions = warp::any().map(move || shared_sessions.clone());
     let with_send_to_server = warp::any().map(move || send_to_server.clone());
 
     let routes = warp::any()
         .and(warp::ws())
         .and(with_internal_state)
-        .and(with_shared_sessions)
         .and(with_send_to_server)
         .and(warp::filters::addr::remote())
         .map(
             |ws: warp::ws::Ws,
              internal_state: Arc<Mutex<InternalState>>,
-             shared_sessions: Arc<Mutex<Sessions>>,
              send_to_server: Sender<TransportIncomingMessage>,
              maybe_address| {
                 info!("Warp connection started......");
@@ -126,7 +125,6 @@ async fn start_warp(
                             handle_connection(
                                 rx,
                                 internal_state.clone(),
-                                shared_sessions.clone(),
                                 address.clone(),
                                 send_to_server.clone(),
                             )
@@ -153,7 +151,6 @@ async fn start_warp(
 async fn handle_connection(
     mut rx: SplitStream<WebSocket>,
     internal_state: Arc<Mutex<InternalState>>,
-    shared_sessions: Arc<Mutex<Sessions>>,
     connection_address: SocketAddr,
     send_to_server: Sender<TransportIncomingMessage>,
 ) {
@@ -172,7 +169,6 @@ async fn handle_connection(
                     handle_message(
                         message,
                         internal_state.clone(),
-                        shared_sessions.clone(),
                         connection_address.clone(),
                         send_to_server.clone(),
                     )
@@ -204,7 +200,6 @@ async fn handle_connection(
 async fn handle_message(
     message: WarpMessage,
     internal_state: Arc<Mutex<InternalState>>,
-    _shared_sessions: Arc<Mutex<Sessions>>, // TODO: Mark ping time in shared sessions
     connection_address: SocketAddr,
     send_to_server: Sender<TransportIncomingMessage>,
 ) -> Result<()> {
@@ -265,9 +260,10 @@ async fn handle_message(
                                 Err(error)
                                     .context("Failed to forward new session handshake to server")
                             } else {
+                                info!("Awaiting auth.....");
                                 match auth_rx.recv_async().await {
                                     Ok(SessionControlMessage::Accept(Some(session_id))) => {
-                                        debug!("Got session ID for authing client: {}", session_id);
+                                        info!("Got session ID for authing client: {}", session_id);
                                         let mut state = internal_state.lock().await;
                                         state
                                             .address_sessions
@@ -320,9 +316,7 @@ async fn get_session_id(
     internal_state: Arc<Mutex<InternalState>>,
     address: SocketAddr,
 ) -> Option<SessionID> {
-    info!("LOCKING STATE");
     let state = internal_state.lock().await;
-    info!("GOT LOCK ON STATE");
     if let Some(session_id) = state.address_sessions.get_by_left(&address) {
         Some(*session_id)
     } else {
@@ -360,10 +354,47 @@ async fn close_connection(
  */
 async fn start_outgoing_message_handler(
     rx: Receiver<TransportOutgoingMessage>,
-    _internal_state: Arc<Mutex<InternalState>>,
-    _shared_sessions: Arc<Mutex<Sessions>>,
+    internal_state: Arc<Mutex<InternalState>>,
 ) -> Result<()> {
     // TODO
-    while let Ok(_message) = rx.recv_async().await {}
+    while let Ok(message) = rx.recv_async().await {
+        match message {
+            TransportOutgoingMessage::Send(session_ids, data) => {
+                match serde_cbor::ser::to_vec(&Message::Data(data)) {
+                    Ok(payload) => {
+                        let warp_message = WarpMessage::binary(payload);
+
+                        let send_futures = session_ids.iter().map(|session_id| async {
+                            let session_id = session_id.clone();
+                            let mut internal_state = internal_state.lock().await;
+                            match internal_state.get_connection(&session_id) {
+                                Some(tx) => match tx.send(warp_message.clone()).await {
+                                    Err(error) => {
+                                        error!("Failed to send message to client: {:?}", error)
+                                    }
+                                    _ => (),
+                                },
+                                None => {
+                                    error!(
+                                        "Could not find connection for session {:?}",
+                                        session_id
+                                    );
+                                }
+                            }
+                        });
+
+                        futures::future::join_all(send_futures).await;
+                    }
+                    Err(error) => {
+                        error!("Failed to serialize client message: {:?}", error);
+                    }
+                }
+            }
+            TransportOutgoingMessage::Purge(_session_id) => todo!(),
+        }
+        // match message {
+        //     Message::
+        // }
+    }
     Ok(())
 }

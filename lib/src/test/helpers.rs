@@ -55,7 +55,6 @@ impl RtcTransport for TestTransport {
 
     async fn start(
         self,
-        _shared_sessions: Arc<Mutex<Sessions>>,
         _tx: Sender<TransportIncomingMessage>,
         rx: Receiver<TransportOutgoingMessage>,
     ) -> Result<()> {
