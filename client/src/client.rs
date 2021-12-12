@@ -7,12 +7,15 @@ use futures::{SinkExt, StreamExt};
 use multiplay_rs::rtc::protocol::{client::Message, common::SessionID};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async, tungstenite::Message as TungsteniteMessage, MaybeTlsStream, WebSocketStream,
+};
 use url::Url;
 
-struct Client {
+pub struct Client {
     join_handle: Option<JoinHandle<Result<()>>>,
     stop_thread_tx: Option<Sender<()>>,
+    session_id: Arc<Mutex<Option<SessionID>>>,
 }
 
 impl Client {
@@ -20,6 +23,7 @@ impl Client {
         Client {
             join_handle: None,
             stop_thread_tx: None,
+            session_id: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -37,6 +41,7 @@ impl Client {
         let (stop_thread_tx, stop_thread_rx) = flume::unbounded::<()>();
         let (to_client_tx, from_consumer_rx) = flume::unbounded::<T>();
         let (to_consumer_tx, from_client_rx) = flume::unbounded::<T>();
+        let session_id = self.session_id.clone();
 
         let join_handle = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -45,12 +50,14 @@ impl Client {
                 .unwrap();
 
             let message_loop_result = rt.block_on(client_message_loop(
+                url,
+                session_id,
                 to_consumer_tx,
                 from_consumer_rx,
                 stop_thread_rx,
             ));
 
-            if let Err(error) = message_loop_result {
+            if let Err(error) = &message_loop_result {
                 error!("{:?}", error);
             }
 
@@ -90,6 +97,7 @@ impl Client {
 
 async fn client_message_loop<T>(
     url: &'static str,
+    session_id: Arc<Mutex<Option<SessionID>>>,
     message_tx: Sender<T>,
     message_rx: Receiver<T>,
     stop_rx: Receiver<()>,
@@ -97,35 +105,88 @@ async fn client_message_loop<T>(
 where
     T: Send + Serialize + DeserializeOwned,
 {
-    let (mut ws_tx, mut ws_rx) = web_socket_connect(url).await?.split();
-    let session_id: Arc<Mutex<Option<SessionID>>> = Arc::new(Mutex::new(None));
+    let (ws_tx, mut ws_rx) = web_socket_connect(url).await?.split();
+    let (auth_tx, auth_rx) = flume::bounded::<SessionID>(1);
+    let ws_tx = Arc::new(Mutex::new(ws_tx));
 
     let send_loop = async {
-        while let Ok(message) = message_rx.recv_async().await {
-            if let None = *session_id.lock().await {
-                continue;
+        // Handshake to server, passing a ready-available session ID if
+        // we have one:
+        // TODO: Pass admin secret if we have one...
+        match ws_tx
+            .lock()
+            .await
+            .send(web_socket_payload(Message::Handshake(
+                *session_id.lock().await,
+                None,
+            )))
+            .await
+        {
+            Err(error) => {
+                error!("Failed to send handshake to server: {:?}", error);
+                return ();
             }
+            _ => (),
+        };
 
-            match serde_cbor::ser::to_vec(&message) {
-                Ok(data) => match ws_tx.send(web_socket_payload(Message::Data(data))).await {
-                    Err(error) => error!("Failed to send message: {:?}", error),
-                    _ => (),
-                },
-                Err(error) => error!("Failed to serialize data: {:?}", error),
-            };
+        match auth_rx.recv_async().await {
+            Ok(_session_id) => {
+                while let Ok(message) = message_rx.recv_async().await {
+                    match serde_cbor::ser::to_vec(&message) {
+                        Ok(data) => match ws_tx
+                            .lock()
+                            .await
+                            .send(web_socket_payload(Message::Data(data)))
+                            .await
+                        {
+                            Err(error) => error!("Failed to send message: {:?}", error),
+                            _ => (),
+                        },
+                        Err(error) => error!("Failed to serialize data: {:?}", error),
+                    };
+                }
+            }
+            Err(error) => error!("Failed to resolve session ID: {:?}", error),
         }
     };
 
     let receive_loop = async {
-        while let Some(message) = ws_rx.next().await {
-            // match message {
-            //     Ok(WsMessage::Binary(bytes)) => {
-            //         let message: Message =
-            //             serde_cbor::de::from_slice(bytes.as_slice()).unwrap();
-            //         send_to_server.send_async(message).await.unwrap();
-            //     }
-            //     _ => panic!("Incorrect message type"),
-            // }
+        while let Some(Ok(message)) = ws_rx.next().await {
+            match message {
+                TungsteniteMessage::Binary(data) => {
+                    match serde_cbor::de::from_slice(data.as_slice()) {
+                        Ok(Message::Session(session_id)) => {
+                            match auth_tx.send_async(session_id).await {
+                                Err(error) => {
+                                    error!("Failed to forward auth to send loop: {:?}", error)
+                                }
+                                _ => (),
+                            }
+                        }
+                        Ok(Message::Data(data)) => match serde_cbor::de::from_slice::<T>(&data) {
+                            Ok(message) => match message_tx.send_async(message).await {
+                                Err(error) => {
+                                    error!("Failed send message to embedder: {:?}", error)
+                                }
+                                _ => (),
+                            },
+                            Err(error) => error!("Failed to deserialize message: {:?}", error),
+                        },
+                        Ok(Message::Ping(ping_id)) => {
+                            if let Err(error) = ws_tx
+                                .lock()
+                                .await
+                                .send(web_socket_payload(Message::Pong(ping_id)))
+                                .await
+                            {
+                                error!("Failed to send ping response to server: {:?}", error);
+                            }
+                        }
+                        _ => warn!("Unanticipated result deserializing server message"),
+                    }
+                }
+                _ => warn!("Unexpected message type received from server"),
+            }
         }
     };
 
@@ -155,81 +216,3 @@ fn web_socket_payload(message: Message) -> tokio_tungstenite::tungstenite::Messa
     let bytes = serde_cbor::ser::to_vec(&message).unwrap();
     tokio_tungstenite::tungstenite::Message::Binary(bytes)
 }
-
-/*
-
-
-pub fn ws_payload(message: Message) -> WsMessage {
-    let bytes = serde_cbor::ser::to_vec(&message).unwrap();
-    WsMessage::Binary(bytes)
-}
-
-pub struct WsTestClient {
-    join_handle: JoinHandle<()>,
-    stop_thread_tx: Sender<()>,
-    pub rx: Receiver<Message>,
-    pub tx: Sender<Message>,
-}
-
-impl WsTestClient {
-    pub fn new(url: &'static str) -> Self {
-        let (stop_thread_tx, stop_thread_rx) = flume::unbounded::<()>();
-        let (send_to_server, receive_from_client) = flume::unbounded::<Message>();
-        let (send_to_client, receive_from_server) = flume::unbounded::<Message>();
-
-        let join_handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-
-            rt.block_on(async {
-                info!("Test client connecting...");
-                let (mut ws_tx, mut ws_rx) = ws_connect(url).await.split();
-
-                let send_loop = async {
-                    while let Ok(message) = receive_from_server.recv_async().await {
-                        ws_tx.send(ws_payload(message)).await.unwrap();
-                    }
-                };
-
-                let receive_loop = async {
-                    while let Some(message) = ws_rx.next().await {
-                        match message {
-                            Ok(WsMessage::Binary(bytes)) => {
-                                let message: Message =
-                                    serde_cbor::de::from_slice(bytes.as_slice()).unwrap();
-                                send_to_server.send_async(message).await.unwrap();
-                            }
-                            _ => panic!("Incorrect message type"),
-                        }
-                    }
-                };
-
-                let kill_loop = async {
-                    stop_thread_rx.recv_async().await.unwrap();
-                };
-
-                tokio::select! {
-                    _ = send_loop => (),
-                    _ = receive_loop => (),
-                    _ = kill_loop => ()
-                };
-            });
-        });
-
-        WsTestClient {
-            join_handle,
-            stop_thread_tx,
-            tx: send_to_client,
-            rx: receive_from_client,
-        }
-    }
-
-    pub fn close(self) {
-        self.stop_thread_tx.send(()).unwrap();
-        self.join_handle.join().unwrap();
-    }
-}
-
-*/

@@ -30,7 +30,6 @@ use super::{
 pub trait RtcTransport {
     async fn start(
         self,
-        shared_sessions: Arc<Mutex<Sessions>>,
         send_to_server: Sender<TransportIncomingMessage>,
         receive_from_server: Receiver<TransportOutgoingMessage>,
     ) -> Result<()>;
@@ -119,11 +118,9 @@ impl RtcServer {
             senders.push(server_send_to_transport);
             receivers.push(server_receive_from_transport);
 
-            transport_handles.push(tokio::task::spawn(transport.start(
-                shared_sessions.clone(),
-                transport_send_to_server,
-                transport_receive_from_server,
-            )));
+            transport_handles.push(tokio::task::spawn(
+                transport.start(transport_send_to_server, transport_receive_from_server),
+            ));
         }
 
         let receive_message_loop = run_receive_message_loop(
@@ -202,10 +199,14 @@ async fn run_send_message_loop(
             .iter()
             // Only sessions that have a connected status should receive messages
             .filter(|session_id| match sessions.get(session_id) {
-                Some(session) => match session.get_status() {
-                    SessionStatus::Connected(_) => true,
-                    _ => false,
-                },
+                Some(session) => {
+                    info!("Session status: {:?}", session.get_status());
+
+                    match session.get_status() {
+                        SessionStatus::Connected(_) => true,
+                        _ => false,
+                    }
+                }
                 _ => false,
             })
             // Split sessions between those that should be messaged over
@@ -219,6 +220,7 @@ async fn run_send_message_loop(
                 _ => false,
             });
 
+        info!("All session IDs: {:?}", session_ids);
         info!("Bulk sending {:?} to {:?}", data, bulk_session_ids);
         info!(
             "Unordered sending {:?} to {:?}",
@@ -367,7 +369,9 @@ async fn receive_messages_from_transport(
                                 session.id = session_id;
                             }
 
+                            session.authenticated = true;
                             session.admin = is_admin;
+                            session.add_transport(transport_type.clone());
 
                             let id = session.id;
 

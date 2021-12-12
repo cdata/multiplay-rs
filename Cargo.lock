@@ -924,6 +924,7 @@ dependencies = [
  "futures",
  "log",
  "multiplay-rs",
+ "pretty_env_logger",
  "serde",
  "serde_cbor",
  "tokio",
