@@ -897,6 +897,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hyper",
+ "js-sys",
  "log",
  "ntest",
  "pretty_env_logger",
@@ -913,29 +914,8 @@ dependencies = [
  "warp",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "web-sys",
  "webrtc-unreliable",
- "wee_alloc",
-]
-
-[[package]]
-name = "multiplay-rs-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-std",
- "console_error_panic_hook",
- "flume",
- "futures",
- "log",
- "multiplay-rs",
- "pretty_env_logger",
- "serde",
- "serde_cbor",
- "tokio",
- "tokio-tungstenite 0.16.1",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-test",
  "wee_alloc",
 ]
 
