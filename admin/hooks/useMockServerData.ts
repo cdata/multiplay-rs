@@ -7,12 +7,14 @@ import type {
 } from '../lib/serverData';
 import { useState, useEffect } from 'react';
 
+const serverData = new ServerData();
+
 export default function useMockServerData() {
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [serverData, setServerData] = useState<ServerData>(new ServerData());
 
   useEffect(() => {
     function handlePing(event) {
+      console.log('handling ping');
       const { sessionId, ping, transport } = (<any>event)
         .detail as ServerDataPingEvent;
 
@@ -32,6 +34,7 @@ export default function useMockServerData() {
     }
 
     function handleConnected(event) {
+      console.log('handling connected');
       const { id } = (<any>event).detail as ServerDataConnectedEvent;
       setConnections((connections) => [
         ...connections,
@@ -40,6 +43,7 @@ export default function useMockServerData() {
     }
 
     function handleDisconnected(event) {
+      console.log('handling disconnected');
       const { id } = (<any>event).detail as ServerDataDisconnectedEvent;
       setConnections((connections) =>
         connections.filter((connection) => connection.id !== id)

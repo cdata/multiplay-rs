@@ -1,5 +1,6 @@
 .sidebar {
   width: 255px;
+  flex-shrink: 0;
   background-color: var(--sidebar-background);
   color: var(--sidebar-text);
 

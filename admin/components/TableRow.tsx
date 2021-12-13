@@ -8,7 +8,7 @@ type TableRowProps = {
 
 const TableRow = ({ connection }: TableRowProps) => {
   function handleKick() {
-    alert('A user was kicked');
+    alert(`user ${connection.id} kicked`);
   }
 
   return (

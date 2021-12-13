@@ -62,6 +62,7 @@ export default class ServerData extends EventTarget {
   };
 
   #dispatch = (event, data) => {
+    console.log(`dispatching ${event}`);
     this.dispatchEvent(
       new CustomEvent(event, {
         detail: data,
