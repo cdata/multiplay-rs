@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use multiplay_rs::rtc::{server::RtcServer, transport::websockets::WebSocketTransport};
+use multiplay_rs::rtc::{
+    client::NativeClient, server::RtcServer, transport::websockets::WebSocketTransport,
+};
 
 extern crate pretty_env_logger;
 #[macro_use]
@@ -59,6 +61,7 @@ mod echo {
     }
 }
 
+#[cfg(all(feature = "native_client", feature = "server"))]
 #[tokio::main]
 pub async fn main() {
     pretty_env_logger::init();
@@ -73,7 +76,7 @@ pub async fn main() {
     let echo_runs = echo.run();
 
     let client_runs = async {
-        let mut client = multiplay_rs_client::Client::new();
+        let mut client = NativeClient::new();
         let (tx, rx) = client.connect::<echo::Message>("ws://127.0.0.1:8001");
 
         loop {

@@ -892,6 +892,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "bimap",
+ "console_error_panic_hook",
  "flume",
  "futures",
  "futures-util",
@@ -910,7 +911,10 @@ dependencies = [
  "tungstenite 0.16.0",
  "url",
  "warp",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
  "webrtc-unreliable",
+ "wee_alloc",
 ]
 
 [[package]]

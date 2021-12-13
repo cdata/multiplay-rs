@@ -1,10 +1,10 @@
 use std::{sync::Arc, thread::JoinHandle};
 
+use crate::rtc::protocol::{client::Message, common::SessionID};
 use anyhow::{anyhow, Context, Result};
 use async_std::sync::Mutex;
 use flume::{Receiver, Sender};
 use futures::{SinkExt, StreamExt};
-use multiplay_rs::rtc::protocol::{client::Message, common::SessionID};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{

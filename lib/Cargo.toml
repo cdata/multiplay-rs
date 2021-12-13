@@ -1,13 +1,17 @@
 [package]
 name = "multiplay-rs"
 version = "0.1.0"
+authors = ["Chris Joel <chris@scriptolo.gy>"]
 edition = "2021"
 
-[dependencies]
-tokio = { version = "1.9.0", features = ["full"] }
-warp = "0.3.1"
-webrtc-unreliable = "0.5.1"
+[features]
+default = ["server"]
+native_client = ["tokio-tungstenite", "tokio"]
+web_client = ["console_error_panic_hook", "wasm-bindgen"]
+server = ["warp", "webrtc-unreliable", "tokio"]
 
+[dependencies]
+# Common dependencies
 serde_cbor = "0.11.2"
 
 flume = "0.10.9"
@@ -20,8 +24,19 @@ anyhow = "1.0.51"
 
 rand = "0.8.4"
 log = "0.4"
+url = "2.2.2"
 
+# Server / native client dependencies
+tokio-tungstenite = { version = "0.16.1", optional = true }
+tokio = { version = "1.9.0", features = ["full"], optional = true }
 
+warp = { version = "0.3.1", optional = true }
+webrtc-unreliable = { version = "0.5.1", optional = true }
+
+# Web client dependencies
+wasm-bindgen = { version = "0.2.63", optional = true }
+console_error_panic_hook = { version = "0.1.6", optional = true }
+wee_alloc = { version = "0.4.5", optional = true }
 
 [dependencies.serde]
 version = "1.0.130"
@@ -32,6 +47,7 @@ version = "1.10.0"
 features = ["attributes", "unstable"]
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3.13"
 pretty_env_logger = { version = "0.4.0" }
 hyper = { version = "0.14", features = ["full"] }
 serde_json = "1.0.68"
@@ -39,5 +55,8 @@ ntest = "0.7.3"
 regex = "1.5.4"
 tungstenite = "0.16.0"
 tokio-tungstenite = "0.16.1"
-url = "2.2.2"
 serial_test = "0.5.1"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
